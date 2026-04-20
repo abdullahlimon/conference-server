@@ -128,7 +128,7 @@ io.on("connection", (socket) => {
     isAdmin = true;
 
     sess.participants[pid] = {
-      id: pid, name: name || "Host", micOn: true, online: true,
+      id: pid, name: name || "Host", micOn: true, camOn: true, online: true,
       handRaised: false, isScreenSharing: false,
       isAdmin: true, ip,
       joinedAt: Date.now(), socketId: socket.id,
@@ -155,7 +155,7 @@ io.on("connection", (socket) => {
     isAdmin = false;
 
     sess.participants[pid] = {
-      id: pid, name, micOn: true, online: true,
+      id: pid, name, micOn: true, camOn: true, online: true,
       handRaised: false, isScreenSharing: false,
       isAdmin: false, ip,
       joinedAt: Date.now(), socketId: socket.id,
@@ -175,6 +175,37 @@ io.on("connection", (socket) => {
     sess.chat.push(msg);
     if (sess.chat.length > 500) sess.chat.shift();
     broadcast("chat_message", msg);
+  });
+
+  // ── Camera control (admin controls others; anyone controls self) ──
+  socket.on("toggle_cam", ({ targetPid }) => {
+    const sess = getSession();
+    if (!sess) return;
+    if (!isAdmin && targetPid !== pid) return;
+    const t = sess.participants[targetPid];
+    if (!t) return;
+    t.camOn = !t.camOn;
+    broadcast("cam_update", { pid: targetPid, camOn: t.camOn });
+    if (t.socketId) io.to(t.socketId).emit("your_cam", { camOn: t.camOn });
+  });
+
+  socket.on("cam_off_all", () => {
+    if (!isAdmin) return;
+    const sess = getSession();
+    if (!sess) return;
+    Object.values(sess.participants).forEach(p => {
+      if (p.isAdmin) return;
+      p.camOn = false;
+      if (p.socketId) io.to(p.socketId).emit("your_cam", { camOn: false });
+    });
+    broadcastState();
+  });
+
+  socket.on("my_cam", ({ camOn }) => {
+    const sess = getSession();
+    if (!sess || !pid || !sess.participants[pid]) return;
+    sess.participants[pid].camOn = camOn;
+    broadcast("cam_update", { pid, camOn });
   });
 
   // ── Mic toggle (admin controls others; anyone controls self) ──
@@ -342,6 +373,7 @@ io.on("connection", (socket) => {
       sess.participants[pid].online = false;
       sess.participants[pid].isScreenSharing = false;
       sess.handQueue = sess.handQueue.filter(id => id !== pid);
+      broadcast("peer_left", { pid });
       broadcastState();
     }
   });
@@ -356,7 +388,7 @@ function fullState(sessionId) {
     handQueue: sess.handQueue,
     bans: sess.bans,
     participants: Object.values(sess.participants).filter(p => p.online).map(p => ({
-      id: p.id, name: p.name, micOn: p.micOn,
+      id: p.id, name: p.name, micOn: p.micOn, camOn: p.camOn !== false,
       handRaised: p.handRaised, isScreenSharing: p.isScreenSharing,
       isAdmin: p.isAdmin, joinedAt: p.joinedAt,
     })),

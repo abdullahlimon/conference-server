@@ -6,10 +6,24 @@ const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 const server = http.createServer(app);
+const allowedOrigins = [
+  "https://meet.futuretrackconsultancy.com",
+  "http://meet.futuretrackconsultancy.com",
+  "*"
+];
+
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
+  cors: { origin: allowedOrigins, methods: ["GET", "POST"], credentials: true },
   pingTimeout: 60000,
   pingInterval: 25000,
+});
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
 });
 
 app.use(express.json());
